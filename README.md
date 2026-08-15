@@ -11,7 +11,6 @@
 
 - 更新日期以实际结果为准。
 - **示例内容不要导入任何工具，请使用下方API。**
-- 香港和台湾地区分别标注为 HK、TW。
 
 ```txt
 # 295 bestips updated at 2026-08-01 20:47
@@ -32,6 +31,7 @@
 104.17.0.8:443#US 🇺🇸
 ···
 ```
+
 ## 应用效果
 
 - 经代理客户端解析后，节点名称将显示**国家代码**以及**国旗**。
@@ -61,6 +61,7 @@ https://raw.githubusercontent.com/LancelotRar/best-cf-ips/main/best-cf-domain.tx
 ```
 
 ## 感谢以下个人或组织的公开的优选IP筛选数据
+
 - [bestcf](https://bestcf.pages.dev)
 - [WeTest](https://www.wetest.vip/page/cloudfront/address_v4.html)
 - [UOUIN](https://api.uouin.com/cloudflare.html)
@@ -73,4 +74,5 @@ https://raw.githubusercontent.com/LancelotRar/best-cf-ips/main/best-cf-domain.tx
 - s5公益
 - Luoli
 ## 感谢以下开源项目
+
 - [ip2region](https://github.com/lionsoul2014/ip2region) - 离线 IP 地理位置查询库，用于IP转国家代码。
