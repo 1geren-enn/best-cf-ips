@@ -1,5 +1,7 @@
 # best-cf-ips (ipv4)
+
 ## 项目功能
+
 - 为多个公开或开源Cloudflare优选IP项目进行**聚合&去重&加地理标注&加国旗Unicode**，每3小时更新。  
 - 可接入 [cmliu/edgetunnel](https://github.com/cmliu/edgetunnel)-自定义订阅汇聚。  
 
@@ -7,7 +9,7 @@
   <img src="src/IN-EDT.png" alt="效果图">
 </p>
 
-## API内容**示例**，
+## API内容**示例**
 
 - 更新日期以实际结果为准。
 - **示例内容不要导入任何工具，请使用下方API。**
@@ -45,6 +47,7 @@
 ```
 https://raw.githubusercontent.com/LancelotRar/best-cf-ips/main/best-cf-ipv4.txt
 ```
+---
 
 ## 优选域名API，可配合IP API共同使用。非即时更新，视使用体验少量更新。
 
@@ -73,6 +76,7 @@ https://raw.githubusercontent.com/LancelotRar/best-cf-ips/main/best-cf-domain.tx
 - [vvHan](https://cf.vvhan.com)
 - s5公益
 - Luoli
+
 ## 感谢以下开源项目
 
 - [ip2region](https://github.com/lionsoul2014/ip2region) - 离线 IP 地理位置查询库，用于IP转国家代码。
