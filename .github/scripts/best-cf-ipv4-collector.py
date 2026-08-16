@@ -1,4 +1,5 @@
 import ipaddress
+import importlib
 import json
 import re
 import sys
@@ -11,19 +12,20 @@ from typing import TYPE_CHECKING
 from curl_cffi import requests as cf_requests
 
 try:
+    geoip2_database = importlib.import_module('geoip2.database')
+    AddressNotFoundError = importlib.import_module('geoip2.errors').AddressNotFoundError
+except ImportError:
+    geoip2_database = None
+
+    class AddressNotFoundError(Exception):
+        """Fallback exception type used when the optional runtime dependency is absent."""
+
+try:
     from playwright.sync_api import sync_playwright
 except ImportError:
     sync_playwright = None
 
-try:
-    from ip2region import util
-    from ip2region.searcher import new_with_buffer
-except ImportError:
-    util = None
-    new_with_buffer = None
-
 if TYPE_CHECKING:
-    from ip2region.searcher import Searcher
     from playwright.sync_api import Browser
 
 
@@ -52,8 +54,8 @@ IPV4_ENDPOINT_PATTERN: str = (
     r'(?::([0-9]{1,5}))?(?![\w.:/])'
 )
 OUTPUT_FILE: Path = Path('best-cf-ipv4.txt')
-XDB_URL: str = 'https://raw.githubusercontent.com/lionsoul2014/ip2region/master/data/ip2region_v4.xdb'
-XDB_FILE: Path = Path(__file__).resolve().parent / 'data' / 'ip2region_v4.xdb'
+MMDB_URL: str = 'https://git.io/GeoLite2-City.mmdb'
+MMDB_FILE: Path = Path(__file__).resolve().parent / 'data' / 'GeoLite2-City.mmdb'
 MAX_RETRIES: int = 3
 RETRY_BACKOFF_FACTOR: float = 2.0
 
@@ -161,49 +163,55 @@ def country_to_flag(code: str) -> str:
     return chr(ord(code[0]) - 65 + 0x1F1E6) + chr(ord(code[1]) - 65 + 0x1F1E6)
 
 
-def _ensure_xdb() -> None:
-    """Download the offline xdb database if missing."""
-    if XDB_FILE.exists():
+def _ensure_mmdb() -> None:
+    """Download the offline GeoLite2 City database if missing."""
+    if MMDB_FILE.exists():
         return
-    XDB_FILE.parent.mkdir(parents=True, exist_ok=True)
-    print(f'Downloading {XDB_URL} ...')
+    MMDB_FILE.parent.mkdir(parents=True, exist_ok=True)
+    print(f'Downloading {MMDB_URL} ...')
     with _session() as sess:
-        resp = sess.get(XDB_URL, timeout=120)
+        resp = sess.get(MMDB_URL, timeout=120)
         resp.raise_for_status()
-        XDB_FILE.write_bytes(resp.content)
+        database = resp.content
+
+    temporary_file = MMDB_FILE.with_suffix('.tmp')
+    try:
+        temporary_file.write_bytes(database)
+        temporary_file.replace(MMDB_FILE)
+    finally:
+        temporary_file.unlink(missing_ok=True)
 
 
-_searcher = None
+_reader = None
 
 
-def _get_searcher() -> 'Searcher':
-    """Lazily create a full-memory xdb searcher."""
-    global _searcher
-    if new_with_buffer is None:
-        raise RuntimeError('ip2region not installed; run: pip install -r .github/scripts/requirements.txt')
-    if _searcher is None:
-        _ensure_xdb()
-        _searcher = new_with_buffer(
-            util.version_from_header(util.load_header_from_file(str(XDB_FILE))),
-            util.load_content_from_file(str(XDB_FILE)),
-        )
-    return _searcher
+def _get_reader():
+    """Lazily create a singleton GeoLite2 database reader."""
+    global _reader
+    if geoip2_database is None:
+        raise RuntimeError('geoip2 not installed; run: pip install -r .github/scripts/requirements.txt')
+    if _reader is None:
+        _ensure_mmdb()
+        _reader = geoip2_database.Reader(str(MMDB_FILE))
+    return _reader
+
+
+def close_reader() -> None:
+    """Close the singleton database reader, releasing its file handle."""
+    global _reader
+    if _reader is not None:
+        _reader.close()
+        _reader = None
 
 
 def lookup_country(ip: str) -> str:
-    """Look up ISO-3166 country code offline via ip2region, return 'XX' on failure."""
+    """Look up an ISO-3166 country code via GeoLite2, returning 'XX' on failure."""
     try:
-        region = _get_searcher().search(ip)
-        fields = region.split('|')
-        match fields[1]:
-            case '香港特别行政区':
-                code = 'HK'
-            case '台湾省':
-                code = 'TW'
-            case _:
-                code = fields[-1].strip()
-        if re.fullmatch(r'[A-Z]{2}', code):
+        code = _get_reader().city(ip).country.iso_code
+        if code is not None and re.fullmatch(r'[A-Z]{2}', code):
             return code
+    except AddressNotFoundError:
+        pass
     except Exception:
         pass
     return 'XX'
@@ -291,7 +299,7 @@ def collect_ips(session: cf_requests.Session) -> set[tuple[str, str]]:
 
 def enrich_locations(ips: set[tuple[str, str]]) -> dict[str, str]:
     """Query geographic locations for all IPv4 endpoints via the offline database."""
-    _get_searcher()
+    _get_reader()
     entries: dict[str, str] = {}
     for ip, port in ips:
         entries[f'{ip}:{port}'] = lookup_country(ip)
@@ -327,7 +335,10 @@ def main() -> int:
         try:
             session.close()
         finally:
-            close_browser()
+            try:
+                close_browser()
+            finally:
+                close_reader()
 
 
 if __name__ == '__main__':
