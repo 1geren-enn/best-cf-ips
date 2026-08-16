@@ -207,7 +207,11 @@ def close_reader() -> None:
 def lookup_country(ip: str) -> str:
     """Look up an ISO-3166 country code via GeoLite2, returning 'XX' on failure."""
     try:
-        code = _get_reader().city(ip).country.iso_code
+        response = _get_reader().city(ip)
+        code = response.country.iso_code
+        if code is not None and re.fullmatch(r'[A-Z]{2}', code):
+            return code
+        code = response.registered_country.iso_code
         if code is not None and re.fullmatch(r'[A-Z]{2}', code):
             return code
     except AddressNotFoundError:
