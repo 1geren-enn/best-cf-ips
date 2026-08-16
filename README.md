@@ -80,6 +80,4 @@ https://raw.githubusercontent.com/LancelotRar/best-cf-ips/main/best-cf-domain.tx
 ## 感谢以下开源项目
 
 - [P3TERX/GeoLite.mmdb](https://github.com/P3TERX/GeoLite.mmdb) - 提供自动更新的 GeoLite2 MMDB 数据库。
-- [MaxMind GeoLite2](https://dev.maxmind.com/) - IP 地理位置数据库原始数据提供方。
-
-This product includes GeoLite2 Data created by MaxMind, available from https://www.maxmind.com.
+- [MaxMind GeoLite2](https://www.maxmind.com) - IP 地理位置数据库原始数据提供方。
