@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gzip
 import ipaddress
 import importlib
 import json
@@ -58,7 +59,7 @@ IPV4_ENDPOINT_PATTERN: str = (
     r'(?::([0-9]{1,5}))?(?![\w.:/])'
 )
 OUTPUT_FILE: Path = Path('best-cf-ipv4.txt')
-MMDB_URL: str = 'https://git.io/GeoLite2-City.mmdb'
+MMDB_URL: str = 'https://cdn.jsdelivr.net/npm/geolite2-city/GeoLite2-City.mmdb.gz'
 MMDB_FILE: Path = Path(__file__).resolve().parent / 'data' / 'GeoLite2-City.mmdb'
 MAX_RETRIES: int = 3
 RETRY_BACKOFF_FACTOR: float = 2.0
@@ -180,7 +181,7 @@ def _ensure_mmdb() -> None:
             with _session() as sess:
                 resp = sess.get(MMDB_URL, timeout=120)
                 resp.raise_for_status()
-                temporary_file.write_bytes(resp.content)
+                temporary_file.write_bytes(gzip.decompress(resp.content))
 
             if geoip2_database is None:
                 raise RuntimeError(

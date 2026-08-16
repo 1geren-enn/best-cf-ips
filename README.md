@@ -79,5 +79,5 @@ https://raw.githubusercontent.com/LancelotRar/best-cf-ips/main/best-cf-domain.tx
 
 ## 感谢以下开源项目
 
-- [P3TERX/GeoLite.mmdb](https://github.com/P3TERX/GeoLite.mmdb) - 提供自动更新的 GeoLite2 MMDB 数据库。
+- [wp-statistics/GeoLite2-City](https://github.com/wp-statistics/GeoLite2-City) - 提供每周自动更新的 GeoLite2-City MMDB 数据库镜像（jsDelivr CDN 分发）。
 - [MaxMind GeoLite2](https://www.maxmind.com) - IP 地理位置数据库原始数据提供方。
