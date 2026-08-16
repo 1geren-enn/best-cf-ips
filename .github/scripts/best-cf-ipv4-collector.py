@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import ipaddress
 import importlib
 import json
@@ -7,9 +9,10 @@ import time
 from datetime import datetime, timedelta, timezone
 from html.parser import HTMLParser
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Callable
 
 from curl_cffi import requests as cf_requests
+from curl_cffi.requests.exceptions import RequestException
 
 try:
     geoip2_database = importlib.import_module('geoip2.database')
@@ -26,7 +29,8 @@ except ImportError:
     sync_playwright = None
 
 if TYPE_CHECKING:
-    from playwright.sync_api import Browser
+    from geoip2.database import Reader
+    from playwright.sync_api import Browser, Playwright
 
 
 SOURCES: dict[str, str] = {
@@ -69,13 +73,13 @@ def _session() -> cf_requests.Session:
 
 def fetch(session: cf_requests.Session, url: str, timeout: int = 15) -> str:
     """Fetch a URL with retry support and return response text."""
-    last_err: Exception | None = None
+    last_err: RequestException | None = None
     for attempt in range(1, MAX_RETRIES + 1):
         try:
             resp = session.get(url, timeout=timeout)
             resp.raise_for_status()
             return resp.text
-        except Exception as e:
+        except RequestException as e:
             last_err = e
             if attempt < MAX_RETRIES:
                 time.sleep(RETRY_BACKOFF_FACTOR ** attempt)
@@ -168,24 +172,39 @@ def _ensure_mmdb() -> None:
     if MMDB_FILE.exists():
         return
     MMDB_FILE.parent.mkdir(parents=True, exist_ok=True)
-    print(f'Downloading {MMDB_URL} ...')
-    with _session() as sess:
-        resp = sess.get(MMDB_URL, timeout=120)
-        resp.raise_for_status()
-        database = resp.content
-
     temporary_file = MMDB_FILE.with_suffix('.tmp')
-    try:
-        temporary_file.write_bytes(database)
-        temporary_file.replace(MMDB_FILE)
-    finally:
-        temporary_file.unlink(missing_ok=True)
+    last_err: Exception | None = None
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            print(f'Downloading {MMDB_URL} (attempt {attempt}/{MAX_RETRIES}) ...')
+            with _session() as sess:
+                resp = sess.get(MMDB_URL, timeout=120)
+                resp.raise_for_status()
+                temporary_file.write_bytes(resp.content)
+
+            if geoip2_database is None:
+                raise RuntimeError(
+                    'geoip2 not installed; run: pip install -r .github/scripts/requirements.txt'
+                )
+            validation_reader = geoip2_database.Reader(str(temporary_file))
+            validation_reader.close()
+            temporary_file.replace(MMDB_FILE)
+            return
+        except Exception as e:
+            last_err = e
+            if attempt < MAX_RETRIES:
+                time.sleep(RETRY_BACKOFF_FACTOR ** attempt)
+        finally:
+            temporary_file.unlink(missing_ok=True)
+
+    assert last_err is not None
+    raise last_err
 
 
-_reader = None
+_reader: Reader | None = None
 
 
-def _get_reader():
+def _get_reader() -> Reader:
     """Lazily create a singleton GeoLite2 database reader."""
     global _reader
     if geoip2_database is None:
@@ -193,15 +212,17 @@ def _get_reader():
     if _reader is None:
         _ensure_mmdb()
         _reader = geoip2_database.Reader(str(MMDB_FILE))
-    return _reader
+    reader = _reader
+    assert reader is not None
+    return reader
 
 
 def close_reader() -> None:
     """Close the singleton database reader, releasing its file handle."""
     global _reader
     if _reader is not None:
-        _reader.close()
-        _reader = None
+        reader, _reader = _reader, None
+        reader.close()
 
 
 def lookup_country(ip: str) -> str:
@@ -216,8 +237,6 @@ def lookup_country(ip: str) -> str:
             return code
     except AddressNotFoundError:
         pass
-    except Exception:
-        pass
     return 'XX'
 
 
@@ -226,8 +245,8 @@ def beijing_timestamp() -> str:
     return (datetime.now(timezone.utc) + timedelta(hours=8)).strftime('%Y-%m-%d %H:%M')
 
 
-_browser = None
-_pw = None
+_browser: Browser | None = None
+_pw: Playwright | None = None
 
 
 def _get_browser() -> 'Browser':
@@ -261,16 +280,34 @@ def fetch_rendered(url: str, timeout: int = 30000) -> str:
 def close_browser() -> None:
     """Close the reusable browser and Playwright runtime if they were started."""
     global _browser, _pw
-    try:
-        if _browser is not None:
-            _browser.close()
-    finally:
-        _browser = None
-        if _pw is not None:
-            try:
-                _pw.stop()
-            finally:
-                _pw = None
+    browser, _browser = _browser, None
+    playwright, _pw = _pw, None
+    errors: list[Exception] = []
+    if browser is not None:
+        try:
+            browser.close()
+        except Exception as e:
+            errors.append(e)
+    if playwright is not None:
+        try:
+            playwright.stop()
+        except Exception as e:
+            errors.append(e)
+    if errors:
+        raise errors[0]
+
+
+def _cleanup_resources(session: cf_requests.Session, active_exception: bool) -> None:
+    """Attempt every cleanup action without replacing an active main exception."""
+    errors: list[Exception] = []
+    actions: tuple[Callable[[], Any], ...] = (session.close, close_browser, close_reader)
+    for action in actions:
+        try:
+            action()
+        except Exception as e:
+            errors.append(e)
+    if errors and not active_exception:
+        raise errors[0]
 
 
 def collect_ips(session: cf_requests.Session) -> set[tuple[str, str]]:
@@ -336,13 +373,7 @@ def main() -> int:
         print(f'\n{len(entries)} IPs written to {OUTPUT_FILE}')
         return 0
     finally:
-        try:
-            session.close()
-        finally:
-            try:
-                close_browser()
-            finally:
-                close_reader()
+        _cleanup_resources(session, sys.exception() is not None)
 
 
 if __name__ == '__main__':
